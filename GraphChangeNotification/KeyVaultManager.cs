@@ -6,10 +6,10 @@ namespace TeamsGraphChangeNotification
 {
     using System;
     using System.Threading.Tasks;
-    using Microsoft.Azure.KeyVault;
-    using Microsoft.Azure.KeyVault.Models;
+    using Azure.Identity;
+    using Azure.Security.KeyVault.Certificates;
+    using Azure.Security.KeyVault.Secrets;
     using Microsoft.Extensions.Options;
-    using Microsoft.IdentityModel.Clients.ActiveDirectory;
     using Models;
 
     public class KeyVaultManager
@@ -58,20 +58,21 @@ namespace TeamsGraphChangeNotification
             {
                 string clientId = KeyVaultOptions.Value.ClientId;
                 string clientSecret = KeyVaultOptions.Value.ClientSecret;
-                string certificateUrl = KeyVaultOptions.Value.CertificateUrl;
+                string tenantId = KeyVaultOptions.Value.TenantId;
+                Uri keyVaultUrl = KeyVaultOptions.Value.KeyVaultUrl;
+                string keyName = KeyVaultOptions.Value.KeyName;
 
-                using KeyVaultClient keyVaultClient = new KeyVaultClient(async (authority, resource, scope) =>
-                 {
-                     ClientCredential adCredential = new ClientCredential(clientId, clientSecret);
-                     AuthenticationContext authenticationContext = new AuthenticationContext(authority, null);
-                     return (await authenticationContext.AcquireTokenAsync(resource, adCredential)).AccessToken;
-                 });
-                SecretBundle keyVaultCertificatePfx = await keyVaultClient.GetSecretAsync(certificateUrl).ConfigureAwait(false);
-                CertificateBundle keyVaultCertificateCer = await keyVaultClient.GetCertificateAsync(certificateUrl.Replace("/secrets/", "/certificates/", StringComparison.OrdinalIgnoreCase)).ConfigureAwait(false);
+                ClientSecretCredential credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+                SecretClient secretClient = new SecretClient(keyVaultUrl, credential);
+                CertificateClient certificateClient = new CertificateClient(keyVaultUrl, credential);
+
+
+                KeyVaultSecret keyVaultCertificatePfx = await secretClient.GetSecretAsync(keyName).ConfigureAwait(false);
+                KeyVaultCertificate keyVaultCertificateCer = await certificateClient.GetCertificateAsync(keyName).ConfigureAwait(false);
 
                 DecryptionCertificate = keyVaultCertificatePfx.Value;
                 this.EncryptionCertificate = Convert.ToBase64String(keyVaultCertificateCer.Cer);
-                this.EncryptionCertificateId = keyVaultCertificatePfx.SecretIdentifier.Version;
+                this.EncryptionCertificateId = keyVaultCertificatePfx.Properties.Version;
             }
             catch (Exception ex)
             {
